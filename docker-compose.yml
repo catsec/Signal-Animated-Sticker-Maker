@@ -1,0 +1,63 @@
+# Signal Sticker Studio — hardened, multi-session.
+# Build & run:   docker compose up -d --build      then open http://127.0.0.1:8765
+#
+# Auth/exposure: this app has NO auth by design. Put it behind Cloudflare Access
+# (or another authenticating proxy). Point cloudflared at http://127.0.0.1:8765
+# and keep MAX_UPLOAD_MB <= your Cloudflare plan's request-body limit (free=100MB).
+services:
+  sticker:
+    build: .
+    image: signal-sticker:1.1
+    container_name: signal-sticker
+
+    # ---- least privilege ----
+    user: "1000:1000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true        # default seccomp + AppArmor stay enabled
+    cap_drop:
+      - ALL                           # listens on 8000 (>1024); no caps needed
+
+    # ---- writable surfaces only ----
+    tmpfs:
+      - /tmp:rw,size=256m,mode=1777    # gunicorn worker tmp + $HOME scratch
+    volumes:
+      - sticker_work:/work             # sessions/uploads/output (disk, not RAM)
+
+    # ---- input & resource limits (strict; tune as a set) ----
+    environment:
+      WORK_DIR: /work
+      MAX_UPLOAD_MB: "100"             # hard upload cap -> clean 413
+      MAX_PIXELS: "40000000"           # ~40 MP per frame
+      MAX_EDGE: "8192"                 # max width/height
+      MAX_CONCURRENT: "2"              # simultaneous conversions (pair with cpus)
+      QUEUE_TIMEOUT_S: "20"            # wait for a slot, else 429
+      SESSION_TTL_MIN: "20"            # reaper age
+      STEP_TIMEOUT_S: "60"            # per-ffmpeg/pngquant timeout -> 504
+      MIN_FREE_MB: "512"               # reject uploads when storage is low -> 503
+
+    ports:
+      - "127.0.0.1:8765:8000"          # localhost only; reach it via the tunnel
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    deploy:
+      resources:
+        limits:   { cpus: "2.0", memory: 1g }
+        reservations: { cpus: "0.5", memory: 256m }
+    # Non-swarm / older Compose fallback (uncomment if `deploy` is ignored):
+    # mem_limit: 1g
+    # cpus: 2.0
+
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  sticker_work:

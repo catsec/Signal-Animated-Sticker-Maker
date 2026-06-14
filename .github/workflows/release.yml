@@ -1,0 +1,78 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write              # create the GitHub Release + upload assets
+
+jobs:
+  desktop:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false         # one platform failing must not block the others
+      matrix:
+        include:
+          # Linux is the primary target (Docker image covers servers/Proxmox).
+          # btbn = asset in https://github.com/BtbN/FFmpeg-Builds/releases/latest
+          # macOS uses the static-ffmpeg pip package.
+          - { os: ubuntu-latest,    target: linux-x64,   btbn: 'ffmpeg-master-latest-linux64-gpl.tar.xz' }
+          - { os: ubuntu-24.04-arm, target: linux-arm64, btbn: 'ffmpeg-master-latest-linuxarm64-gpl.tar.xz' }
+          - { os: macos-14,         target: macos-arm64, btbn: '' }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install deps + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Fetch a static ffmpeg + ffprobe to bundle
+        run: |
+          mkdir -p ffbin
+          if [ -n "${{ matrix.btbn }}" ]; then
+            url="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${{ matrix.btbn }}"
+            echo "downloading $url"
+            curl -fL --retry 3 -o ff_archive "$url"
+            tar -xf ff_archive
+            d=$(find . -maxdepth 1 -type d -name 'ffmpeg-*' | head -n1)
+            cp "$d"/bin/ffmpeg "$d"/bin/ffprobe ffbin/
+          else
+            pip install static-ffmpeg
+            python -c "import shutil,pathlib; from static_ffmpeg import run; f,p=run.get_or_fetch_platform_executables_else_raise(); pathlib.Path('ffbin').mkdir(exist_ok=True); shutil.copy(f,'ffbin/ffmpeg'); shutil.copy(p,'ffbin/ffprobe')"
+          fi
+          chmod +x ffbin/* || true
+          ls -l ffbin
+
+      - name: Build standalone app (onedir)
+        run: |
+          pyinstaller --onedir --noconfirm --clean \
+            --name signal-sticker-studio --paths . \
+            --hidden-import sticker_core --hidden-import signal_sticker \
+            signal_sticker_gui.py
+
+      - name: Bundle ffmpeg next to the executable
+        run: |
+          appdir="dist/signal-sticker-studio"
+          cp ffbin/ffmpeg ffbin/ffprobe "$appdir"/
+          chmod +x "$appdir"/ffmpeg "$appdir"/ffprobe || true
+          ls -l "$appdir" | head
+
+      - name: Package
+        run: python -c "import shutil; shutil.make_archive('signal-sticker-studio-${{ matrix.target }}', 'zip', 'dist/signal-sticker-studio')"
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: signal-sticker-studio-${{ matrix.target }}.zip
+          fail_on_unmatched_files: true

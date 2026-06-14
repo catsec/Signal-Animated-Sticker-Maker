@@ -1,0 +1,35 @@
+# Handover notes / agent context — not part of the published project
+CLAUDE.md
+
+# Test media & ad-hoc outputs (no committed test suite)
+*.gif
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.apng
+out*.png
+*.sticker.png
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# PyInstaller / build artifacts
+build/
+dist/
+*.spec
+
+# Runtime session storage
+work/
+sessions/
+
+# OS / editor / agent
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.claude/
