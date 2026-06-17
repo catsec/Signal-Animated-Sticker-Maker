@@ -34,15 +34,30 @@ Output always satisfies Signal's hard limits:
 
 ### Docker (recommended — bundles ffmpeg + pngquant + fonts)
 
-```bash
-docker compose up -d --build      # -> http://127.0.0.1:8765
-```
-
-Or pull the published image (see [Releases](#releases--ci)):
+Runs **standalone — no tunnel required**:
 
 ```bash
-docker run --rm -p 8765:8000 -v sticker_work:/work ghcr.io/<owner>/signal-sticker-studio
+docker compose up -d --build      # -> http://127.0.0.1:8765  (localhost only by default)
 ```
+
+Exposure is your choice (the app has no auth, so the port defaults to localhost):
+
+```bash
+STICKER_BIND=0.0.0.0 docker compose up -d     # LAN access (no auth — trust your network)
+STICKER_PORT=9000     docker compose up -d     # different host port
+```
+
+Or pull the published multi-arch image directly:
+
+```bash
+docker run -d --name sticker -p 127.0.0.1:8765:8000 -v sticker_work:/work \
+  ghcr.io/catsec/signal-animated-sticker-maker:latest      # -> http://127.0.0.1:8765
+```
+
+**Behind a tunnel / reverse proxy is optional.** To use one (e.g. Cloudflare Access),
+put the container on the proxy's Docker network and point the proxy at
+`http://sticker:8000` — no published port needed. See the optional `networks` blocks in
+`docker-compose.yml`.
 
 ### Desktop binary
 
