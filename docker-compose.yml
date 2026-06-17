@@ -1,18 +1,16 @@
 # Signal Sticker Studio — hardened, multi-session.
 #
-# Runs STANDALONE — no tunnel required:
-#     docker compose up -d --build      ->  http://127.0.0.1:8765
+# Runs STANDALONE — no tunnel required. Listens on ALL interfaces by default:
+#     docker compose up -d --build      ->  http://<host-ip>:8765
 #
-# This app has NO built-in auth, so the published port defaults to localhost only.
-# Pick whichever exposure you need (the tunnel is entirely optional):
-#   * Same machine ......... leave defaults                  -> http://127.0.0.1:8765
-#   * LAN / direct access ... STICKER_BIND=0.0.0.0 docker compose up -d
-#                             (anyone who can reach the host:port can use it — no auth)
+# WARNING: this app has NO built-in auth and the port is published on 0.0.0.0 by
+# default, so anyone who can reach the host:port can use it. Adjust as needed:
+#   * Localhost only ....... STICKER_BIND=127.0.0.1 docker compose up -d
 #   * Custom host port ..... STICKER_PORT=9000 docker compose up -d
-#   * Behind a tunnel / reverse proxy (e.g. Cloudflare Access): you don't even need a
-#     published port — join your proxy's network (see the optional `networks` blocks
-#     below) and point the proxy at  http://sticker:8000 . Keep MAX_UPLOAD_MB <= your
-#     proxy/plan request-body limit (Cloudflare free = 100 MB).
+#   * Behind a tunnel / reverse proxy (optional, e.g. Cloudflare Access): join your
+#     proxy's network (see the optional `networks` blocks below) and point it at
+#     http://sticker:8000 . Keep MAX_UPLOAD_MB <= your proxy/plan request-body limit
+#     (Cloudflare free = 100 MB).
 services:
   sticker:
     build: .
@@ -45,11 +43,11 @@ services:
       STEP_TIMEOUT_S: "60"            # per-ffmpeg/pngquant timeout -> 504
       MIN_FREE_MB: "512"               # reject uploads when storage is low -> 503
 
-    # Host bind defaults to localhost (safe, since there's no auth). Override
-    # STICKER_BIND=0.0.0.0 for LAN access, or STICKER_PORT to change the host port.
-    # If you reach it only via a tunnel on a shared network, you can delete this block.
+    # Published on ALL interfaces (0.0.0.0) by default. Override STICKER_BIND=127.0.0.1
+    # to restrict to localhost, or STICKER_PORT to change the host port. If you reach it
+    # only via a tunnel on a shared network, you can delete this block entirely.
     ports:
-      - "${STICKER_BIND:-127.0.0.1}:${STICKER_PORT:-8765}:8000"
+      - "${STICKER_BIND:-0.0.0.0}:${STICKER_PORT:-8765}:8000"
 
     # ---- optional: join an existing reverse-proxy / tunnel network ----
     # Create it once (`docker network create edge`), uncomment the two lines below and
