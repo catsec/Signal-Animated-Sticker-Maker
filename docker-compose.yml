@@ -1,63 +1,34 @@
-# Signal Sticker Studio — hardened, multi-session.
-#
-# Runs STANDALONE — no tunnel required. Listens on ALL interfaces by default:
-#     docker compose up -d --build      ->  http://<host-ip>:8765
-#
-# WARNING: this app has NO built-in auth and the port is published on 0.0.0.0 by
-# default, so anyone who can reach the host:port can use it. Adjust as needed:
-#   * Localhost only ....... STICKER_BIND=127.0.0.1 docker compose up -d
-#   * Custom host port ..... STICKER_PORT=9000 docker compose up -d
-#   * Behind a tunnel / reverse proxy (optional, e.g. Cloudflare Access): join your
-#     proxy's network (see the optional `networks` blocks below) and point it at
-#     http://sticker:8000 . Keep MAX_UPLOAD_MB <= your proxy/plan request-body limit
-#     (Cloudflare free = 100 MB).
 services:
   sticker:
-    build: .
-    image: signal-sticker:1.1
-    container_name: signal-sticker
-
-    # ---- least privilege ----
+    image: ghcr.io/catsec/signal-animated-sticker-maker:latest
+    container_name: sticker
     user: "1000:1000"
     read_only: true
     security_opt:
-      - no-new-privileges:true        # default seccomp + AppArmor stay enabled
+      - no-new-privileges:true
     cap_drop:
-      - ALL                           # listens on 8000 (>1024); no caps needed
-
-    # ---- writable surfaces only ----
+      - ALL
     tmpfs:
-      - /tmp:rw,size=256m,mode=1777    # gunicorn worker tmp + $HOME scratch
+      - /tmp:rw,size=256m,mode=1777
     volumes:
-      - sticker_work:/work             # sessions/uploads/output (disk, not RAM)
+      - sticker_work:/work
 
-    # ---- input & resource limits (strict; tune as a set) ----
     environment:
       WORK_DIR: /work
-      MAX_UPLOAD_MB: "100"             # hard upload cap -> clean 413
-      MAX_PIXELS: "40000000"           # ~40 MP per frame
-      MAX_EDGE: "8192"                 # max width/height
-      MAX_CONCURRENT: "2"              # simultaneous conversions (pair with cpus)
-      QUEUE_TIMEOUT_S: "20"            # wait for a slot, else 429
-      SESSION_TTL_MIN: "20"            # reaper age
-      STEP_TIMEOUT_S: "60"            # per-ffmpeg/pngquant timeout -> 504
-      MIN_FREE_MB: "512"               # reject uploads when storage is low -> 503
-
-    # Published on ALL interfaces (0.0.0.0) by default. Override STICKER_BIND=127.0.0.1
-    # to restrict to localhost, or STICKER_PORT to change the host port. If you reach it
-    # only via a tunnel on a shared network, you can delete this block entirely.
+      MAX_UPLOAD_MB: "100"
+      MAX_PIXELS: "40000000"
+      MAX_EDGE: "8192"
+      MAX_CONCURRENT: "2"
+      QUEUE_TIMEOUT_S: "20"
+      SESSION_TTL_MIN: "20"
+      STEP_TIMEOUT_S: "60"
+      MIN_FREE_MB: "512"
+    
     ports:
-      - "${STICKER_BIND:-0.0.0.0}:${STICKER_PORT:-8765}:8000"
-
-    # ---- optional: join an existing reverse-proxy / tunnel network ----
-    # Create it once (`docker network create edge`), uncomment the two lines below and
-    # the top-level `networks:` block at the bottom, then point your proxy at
-    # http://sticker:8000 (the `ports:` mapping above then becomes optional).
-    # networks:
-    #   - edge
+      - "8001:8001"          # app listens on 8001 (see Dockerfile); no remapping
 
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8000/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8001/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -67,9 +38,6 @@ services:
       resources:
         limits:   { cpus: "2.0", memory: 1g }
         reservations: { cpus: "0.5", memory: 256m }
-    # Non-swarm / older Compose fallback (uncomment if `deploy` is ignored):
-    # mem_limit: 1g
-    # cpus: 2.0
 
     restart: unless-stopped
     logging:
@@ -79,7 +47,6 @@ services:
 volumes:
   sticker_work:
 
-# ---- optional: shared external network for a tunnel / reverse proxy ----
-# networks:
-#   edge:
-#     external: true
+networks:
+  edge:
+    external: true

@@ -36,14 +36,17 @@ ENV PATH="/opt/venv/bin:$PATH" \
     TMPDIR=/tmp
 
 USER app
-EXPOSE 8000
+# Listens on 8001 (vdl keeps 8000) so the two sister apps never share a port → the
+# compose maps 8001:8001 with no remapping. NB: update the Cloudflare tunnel route to
+# http://sticker:8001 to match.
+EXPOSE 8001
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
-  CMD wget -qO- http://127.0.0.1:8000/health >/dev/null 2>&1 || exit 1
+  CMD wget -qO- http://127.0.0.1:8001/health >/dev/null 2>&1 || exit 1
 
 # One worker + threads is the default. Sessions are now disk-backed (WORK_DIR),
 # so multiple workers also work; note the conversion semaphore (MAX_CONCURRENT) is
 # per-process, so total concurrency = workers x MAX_CONCURRENT — size them together.
 CMD ["gunicorn", "-w", "1", "--threads", "8", "--timeout", "300", \
-     "--worker-tmp-dir", "/tmp", "-b", "0.0.0.0:8000", \
+     "--worker-tmp-dir", "/tmp", "-b", "0.0.0.0:8001", \
      "signal_sticker_gui:app"]

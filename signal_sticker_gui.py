@@ -73,6 +73,23 @@ HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 ALLOWED = {".gif", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".mp4", ".mov",
            ".webm", ".mkv", ".m4v", ".avi"}
 
+
+def _csv_env(name: str, default: str) -> set[str]:
+    return {x.strip().lower() for x in os.environ.get(name, default).split(",") if x.strip()}
+
+
+# Content-based allowlists (ffprobe-reported), checked on upload. The filename extension
+# is attacker-controlled, so we also gate the *decoded codec* and *detected container* to
+# the handful we actually support — keeping crafted inputs away from ffmpeg's obscure
+# demuxers/decoders, where the bulk of its CVEs live. Override via env if needed.
+ALLOWED_CODECS = _csv_env(
+    "STICKER_ALLOWED_CODECS",
+    "h264,hevc,av1,vp8,vp9,mpeg4,mjpeg,gif,png,apng,bmp,webp")
+ALLOWED_CONTAINERS = _csv_env(
+    "STICKER_ALLOWED_CONTAINERS",
+    "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,avi,gif,image2,"
+    "png_pipe,apng,jpeg_pipe,mjpeg,webp_pipe,bmp_pipe")
+
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
@@ -191,6 +208,18 @@ def api_open():
     if w <= 0 or h <= 0:
         shutil.rmtree(d, ignore_errors=True)
         return jsonify(error="No decodable image/video stream found."), 400
+
+    # Content-based allowlist: the *actual* codec/container (not the filename) must be
+    # one we support. Blocks files whose bytes don't match their extension (e.g. a .mp4
+    # that is really a crafted .ts) from reaching an unexpected ffmpeg demuxer/decoder.
+    codec = str(meta.get("codec", ""))
+    containers = {c for c in str(meta.get("container", "")).split(",") if c}
+    if codec and codec not in ALLOWED_CODECS:
+        shutil.rmtree(d, ignore_errors=True)
+        return jsonify(error=f"Unsupported video codec '{codec}'."), 400
+    if containers and containers.isdisjoint(ALLOWED_CONTAINERS):
+        shutil.rmtree(d, ignore_errors=True)
+        return jsonify(error="Unsupported container format."), 400
     if max(w, h) > MAX_EDGE or w * h > MAX_PIXELS:
         shutil.rmtree(d, ignore_errors=True)
         return jsonify(error=f"Resolution {w}x{h} exceeds the limit "
@@ -501,73 +530,84 @@ def _free_port() -> int:
 
 PAGE = r"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>Signal Sticker Studio</title>
+<title>catsec · Signal Sticker Studio</title>
 <style>
-:root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--fg:#e6edf3;--mut:#8b949e;
---acc:#3fb950;--acc2:#2f81f7;--danger:#f85149}
+:root{--card:#ffffff;--line:#e6e6ef;--fg:#333;--mut:#666;
+--acc:#28a745;--acc-d:#218838;--acc2:#667eea;
+--grad:linear-gradient(135deg,#667eea 0%,#764ba2 100%);--danger:#d63333;
+--shadow:0 10px 30px rgba(40,30,90,.18)}
 *{box-sizing:border-box}
-body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg)}
-header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
-header b{font-size:15px;letter-spacing:.3px}
-header span{color:var(--mut);font-size:12px}
-main{max-width:980px;margin:0 auto;padding:22px 20px 60px}
-.drop{border:1.5px dashed var(--line);border-radius:12px;padding:48px 20px;text-align:center;color:var(--mut);
-cursor:pointer;transition:.15s}
-.drop:hover,.drop.hot{border-color:var(--acc2);color:var(--fg);background:#0f1620}
+body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;
+background:var(--grad) fixed;color:var(--fg);min-height:100vh}
+header{padding:18px 22px;display:flex;align-items:center;gap:10px;color:#fff}
+header b{font-size:16px;letter-spacing:.3px}
+header span{color:#ffffffcc;font-size:12px}
+header button{background:#ffffff2b;color:#fff;border:1px solid #ffffff66}
+header button:hover{background:#ffffff40;border-color:#fff;color:#fff}
+main{max-width:980px;margin:0 auto;padding:8px 20px 60px}
+.drop{background:var(--card);border:2px dashed #c9cce0;border-radius:16px;padding:52px 20px;text-align:center;
+color:var(--mut);cursor:pointer;transition:.15s;box-shadow:var(--shadow)}
+.drop:hover,.drop.hot{border-color:var(--acc2);color:var(--fg);background:#f7f8fc}
 .drop b{color:var(--fg)}
 .hide{display:none!important}
 .wrap{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:22px;align-items:start}
 @media(max-width:820px){.wrap{grid-template-columns:1fr}}
-.stagebox{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
-.stage{position:relative;width:100%;max-width:460px;aspect-ratio:1;margin:0 auto;border-radius:8px;overflow:hidden;
+.stagebox{background:var(--card);border-radius:16px;padding:16px;box-shadow:var(--shadow)}
+.stage{position:relative;width:100%;max-width:460px;aspect-ratio:1;margin:0 auto;border-radius:10px;overflow:hidden;
 border:1px solid var(--line);touch-action:none;cursor:grab}
 .stage.drag{cursor:grabbing}
 canvas{display:block;width:100%;height:100%}
-.framehint{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 1px #ffffff22}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+.framehint{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 1px #00000014}
+.panel{background:var(--card);border-radius:16px;padding:18px;margin-bottom:16px;box-shadow:var(--shadow)}
 .panel h3{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut)}
 .row{display:flex;align-items:center;gap:10px;margin:10px 0}
 .row label{min-width:54px;color:var(--mut);font-size:12px}
 input[type=range]{flex:1;accent-color:var(--acc2)}
-button{font:inherit;color:var(--fg);background:#21262d;border:1px solid var(--line);border-radius:7px;
-padding:7px 12px;cursor:pointer}
-button:hover{border-color:var(--mut)}
-button.acc{background:var(--acc);border-color:var(--acc);color:#04210d;font-weight:600;width:100%;padding:11px}
-button.acc:disabled{opacity:.5;cursor:not-allowed}
+button{font:inherit;color:var(--fg);background:#f1f2f7;border:1px solid var(--line);border-radius:8px;
+padding:8px 12px;cursor:pointer;transition:.15s}
+button:hover{border-color:var(--acc2);color:var(--acc2)}
+button.acc{background:var(--grad);border:none;color:#fff;font-weight:600;width:100%;padding:13px;
+box-shadow:0 4px 14px rgba(102,126,234,.35)}
+button.acc:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(102,126,234,.45);color:#fff}
+button.acc:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
 button.ghost{flex:1}
+#dlBtn{background:var(--acc);border:none;color:#fff;font-weight:600}
+#dlBtn:hover{background:var(--acc-d);color:#fff}
 .btns{display:flex;gap:8px}
-.seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
-.seg button{flex:1;border:0;border-radius:0;background:transparent}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{flex:1;border:0;border-radius:0;background:#f1f2f7}
+.seg button:hover{color:var(--fg)}
 .seg button.on{background:var(--acc2);color:#fff}
-.swatch{width:18px;height:18px;border-radius:4px;border:1px solid #fff3;display:inline-block;vertical-align:-3px}
+.swatch{width:18px;height:18px;border-radius:4px;border:1px solid #0002;display:inline-block;vertical-align:-3px}
 .muted{color:var(--mut);font-size:12px}
 .err{color:var(--danger);font-size:13px;margin-top:8px;min-height:1px}
-.tl{position:relative;height:46px;background:#0b1018;border:1px solid var(--line);border-radius:8px;margin:6px 0;touch-action:none}
-.tl .sel{position:absolute;top:0;bottom:0;background:#2f81f733;border-left:3px solid var(--acc2);border-right:3px solid var(--acc2)}
+.tl{position:relative;height:46px;background:#eef0f7;border:1px solid var(--line);border-radius:8px;margin:6px 0;touch-action:none}
+.tl .sel{position:absolute;top:0;bottom:0;background:#667eea33;border-left:3px solid var(--acc2);border-right:3px solid var(--acc2)}
 .tl .h{position:absolute;top:0;bottom:0;width:14px;margin-left:-7px;cursor:ew-resize}
 .tl .play{position:absolute;top:0;bottom:0;width:2px;background:var(--acc);left:0;display:none}
 .tcs{display:flex;justify-content:space-between;font-variant-numeric:tabular-nums;color:var(--mut);font-size:12px}
 .result{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
 .result .chk{width:160px;height:160px;border:1px solid var(--line);border-radius:8px}
 .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line)}
-.pill.ok{color:var(--acc);border-color:#238636}.pill.bad{color:var(--danger);border-color:#da3633}
-.chkbg{background-image:linear-gradient(45deg,#1c2330 25%,transparent 25%),linear-gradient(-45deg,#1c2330 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1c2330 75%),linear-gradient(-45deg,transparent 75%,#1c2330 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0px;background-color:#0b1018}
-.spin{display:inline-block;width:13px;height:13px;border:2px solid #fff4;border-top-color:#fff;border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px;margin-right:6px}
+.pill.ok{color:var(--acc);border-color:var(--acc)}.pill.bad{color:var(--danger);border-color:var(--danger)}
+.chkbg{background-image:linear-gradient(45deg,#dcdce6 25%,transparent 25%),linear-gradient(-45deg,#dcdce6 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#dcdce6 75%),linear-gradient(-45deg,transparent 75%,#dcdce6 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0px;background-color:#f4f4f8}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid #fff6;border-top-color:#fff;border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes s{to{transform:rotate(360deg)}}
 .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:4px}
-.tile{border:1px solid var(--line);border-radius:8px;padding:8px;cursor:pointer;text-align:center;background:#0f1620;transition:.12s}
-.tile:hover{border-color:var(--acc2);background:#11192a}
+.tile{border:1px solid var(--line);border-radius:10px;padding:8px;cursor:pointer;text-align:center;background:#f7f8fc;transition:.12s}
+.tile:hover{border-color:var(--acc2);background:#eef1fb}
 .tile.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
-.tile img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#0b1018;display:block}
+.tile img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#eee;display:block}
 .tile .lab{font-weight:600;margin-top:7px}
 .tile .est{color:var(--mut);font-size:12px}
 .tile.busy{opacity:.5;pointer-events:none}
 @media(max-width:560px){.tiles{grid-template-columns:1fr}}
-textarea#txt{width:100%;background:#0b1018;color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:8px;font:inherit;resize:vertical;margin-bottom:4px}
-select#font{background:#21262d;color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:6px}
-input[type=color]{width:34px;height:26px;padding:0;border:1px solid var(--line);border-radius:6px;background:#21262d;cursor:pointer}
+textarea#txt{width:100%;background:#fff;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;resize:vertical;margin-bottom:4px}
+textarea#txt:focus{outline:none;border-color:var(--acc2)}
+select#font{background:#fff;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px}
+input[type=color]{width:34px;height:26px;padding:0;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer}
 </style></head><body>
-<header><b>Signal Sticker Studio</b><span id=limnote></span>
+<header><b>catsec · Signal Sticker Studio</b><span id=limnote></span>
   <span style="margin-left:auto;display:flex;gap:8px">
     <button id=restartBtn class="ghost hide" title="Reset all settings for this file">↻ Restart</button>
     <button id=newBtn class="ghost hide" title="Start over with a different file">＋ New conversion</button>

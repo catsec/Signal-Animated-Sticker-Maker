@@ -103,8 +103,28 @@ HAVE_PNGQUANT = shutil.which("pngquant") is not None
 RUN_TIMEOUT = None  # seconds; set by callers (e.g. the GUI) to bound subprocesses
 
 
+# Restrict ffmpeg/ffprobe to local-file protocols. Without this a crafted upload
+# (a playlist/concat/HLS-style container) can make ffmpeg follow references to URLs
+# (SSRF) or other local files (LFI) during demux. `-nostdin` stops a malformed input
+# from leaving ffmpeg blocked on stdin. Applied to EVERY ffmpeg/ffprobe call via the
+# run()/_run() wrappers, so new call sites are covered automatically.
+AV_PROTOCOLS = "file,crypto,data"
+
+
+def av_safe(cmd: list[str]) -> list[str]:
+    """Inject protocol/stdin guards for ffmpeg/ffprobe; pass other commands through."""
+    if not cmd:
+        return cmd
+    tool = os.path.basename(str(cmd[0]))
+    if tool == "ffmpeg":
+        return [cmd[0], "-nostdin", "-protocol_whitelist", AV_PROTOCOLS, *cmd[1:]]
+    if tool == "ffprobe":
+        return [cmd[0], "-protocol_whitelist", AV_PROTOCOLS, *cmd[1:]]
+    return cmd
+
+
 def run(cmd: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, check=True, capture_output=True, text=True,
+    return subprocess.run(av_safe(cmd), check=True, capture_output=True, text=True,
                           timeout=RUN_TIMEOUT)
 
 

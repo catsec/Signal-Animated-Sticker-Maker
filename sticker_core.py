@@ -142,18 +142,22 @@ def _draw_text_frames(frames: list[Path], out_dir: Path, t: dict) -> list[Path]:
 
 
 def _run(cmd: list[str]) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, check=True, capture_output=True, text=True,
+    return subprocess.run(ss.av_safe(cmd), check=True, capture_output=True, text=True,
                           timeout=STEP_TIMEOUT)
 
 
 def probe(src: Path) -> dict:
-    """Return width, height, duration (s), fps, frame count, animated flag."""
+    """Return width, height, duration (s), fps, frame count, animated flag, plus the
+    decoded video codec and detected container (content-based, for the allowlist)."""
     out = _run(["ffprobe", "-v", "error", "-select_streams", "v:0",
                 "-show_entries",
-                "stream=width,height,r_frame_rate,nb_frames:format=duration",
+                "stream=width,height,r_frame_rate,nb_frames,codec_name"
+                ":format=duration,format_name",
                 "-of", "json", str(src)]).stdout
     j = json.loads(out)
     st = (j.get("streams") or [{}])[0]
+    codec = str(st.get("codec_name") or "").lower()
+    container = str((j.get("format") or {}).get("format_name") or "").lower()
     w, h = int(st.get("width", 0)), int(st.get("height", 0))
     num, _, den = str(st.get("r_frame_rate", "0/1")).partition("/")
     fps = (float(num) / float(den or 1)) if float(den or 1) else 0.0
@@ -172,7 +176,7 @@ def probe(src: Path) -> dict:
                (dur > 0.05 and nb > 1)
     return {"width": w, "height": h, "duration": round(dur, 3),
             "fps": round(fps, 3) if fps else 0.0, "frames": nb,
-            "animated": bool(animated)}
+            "animated": bool(animated), "codec": codec, "container": container}
 
 
 def _gif_animated(src: Path) -> bool:

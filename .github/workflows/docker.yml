@@ -5,6 +5,11 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+  schedule:
+    # Weekly rebuild (Mon 04:00 UTC) so the image keeps pulling patched ffmpeg/pngquant
+    # from Alpine — ffmpeg ships memory-safety fixes constantly. Scheduled runs build
+    # with no cache (below) so the apk layer is actually refreshed.
+    - cron: "0 4 * * 1"
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
@@ -50,5 +55,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Scheduled runs rebuild from scratch so apk pulls fresh (patched) ffmpeg;
+          # push/dispatch runs use the cache for speed.
+          no-cache: ${{ github.event_name == 'schedule' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
