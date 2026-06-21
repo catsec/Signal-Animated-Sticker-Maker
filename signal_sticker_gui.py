@@ -722,11 +722,16 @@ function reset(){if(media&&media.tagName==='VIDEO')media.pause();S=null;media=nu
 $('#newBtn').onclick=reset;
 $('#restartBtn').onclick=()=>{if(S){$('#qualPanel').classList.add('hide');$('#resPanel').classList.add('hide');setupUI();}};
 
-$('#drop').onclick=()=>$('#file').click();
+$('#drop').addEventListener('click',()=>$('#file').click());
 $('#file').onchange=e=>{if(e.target.files[0])load(e.target.files[0]);e.target.value='';};
-['dragover','dragenter'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.add('hot')}));
-['dragleave','drop'].forEach(ev=>$('#drop').addEventListener(ev,e=>{e.preventDefault();$('#drop').classList.remove('hot')}));
-$('#drop').addEventListener('drop',e=>{if(e.dataTransfer.files[0])load(e.dataTransfer.files[0])});
+// File drag/drop is handled at the document level so a dropped file is ALWAYS caught
+// (and the browser never navigates to / plays it), whether the drop overlay is showing
+// or you're swapping a file while editing.
+const hasFiles=dt=>!!dt&&Array.from(dt.types||[]).includes('Files');
+document.addEventListener('dragover',e=>{if(hasFiles(e.dataTransfer)){e.preventDefault();$('#drop').classList.add('hot');}});
+document.addEventListener('dragleave',e=>{if(!e.relatedTarget)$('#drop').classList.remove('hot');});
+document.addEventListener('drop',e=>{if(hasFiles(e.dataTransfer)){e.preventDefault();$('#drop').classList.remove('hot');
+  if(e.dataTransfer.files[0])load(e.dataTransfer.files[0]);}});
 
 async function load(file){
   dropErr('');err('');
@@ -829,10 +834,10 @@ $('#zoom').oninput=e=>{const old=S.scale,ns=clampScale(sliderToZoom(+e.target.va
   S.ox=256-(256-S.ox)*(ns/old);S.oy=256-(256-S.oy)*(ns/old);S.scale=ns;};
 const stage=$('#stage');let dragging=false,lx=0,ly=0;
 function toFrame(e){const r=stage.getBoundingClientRect();return{x:(e.clientX-r.left)/r.width*512,y:(e.clientY-r.top)/r.height*512}}
-stage.addEventListener('pointerdown',e=>{dragging=true;stage.classList.add('drag');const p=toFrame(e);lx=p.x;ly=p.y;stage.setPointerCapture(e.pointerId)});
+stage.addEventListener('pointerdown',e=>{if(!S)return;dragging=true;stage.classList.add('drag');const p=toFrame(e);lx=p.x;ly=p.y;stage.setPointerCapture(e.pointerId)});
 stage.addEventListener('pointermove',e=>{if(!dragging)return;const p=toFrame(e);S.ox+=p.x-lx;S.oy+=p.y-ly;lx=p.x;ly=p.y});
 stage.addEventListener('pointerup',()=>{dragging=false;stage.classList.remove('drag')});
-stage.addEventListener('wheel',e=>{e.preventDefault();const p=toFrame(e);const old=S.scale;
+stage.addEventListener('wheel',e=>{if(!S)return;e.preventDefault();const p=toFrame(e);const old=S.scale;
   const ns=clampScale(old*(e.deltaY<0?1.1:1/1.1));S.ox=p.x-(p.x-S.ox)*(ns/old);S.oy=p.y-(p.y-S.oy)*(ns/old);S.scale=ns;zoomToSlider();},{passive:false});
 
 function loop(){if(!S)return;ctx.clearRect(0,0,512,512);
