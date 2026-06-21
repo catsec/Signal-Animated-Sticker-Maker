@@ -550,8 +550,13 @@ color:var(--mut);cursor:pointer;transition:.15s;box-shadow:var(--shadow)}
 .drop:hover,.drop.hot{border-color:var(--acc2);color:var(--fg);background:#f7f8fc}
 .drop b{color:var(--fg)}
 .hide{display:none!important}
-.wrap{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:22px;align-items:start}
-@media(max-width:820px){.wrap{grid-template-columns:1fr}}
+.wrap{display:grid;grid-template-columns:minmax(0,1fr);gap:22px;align-items:start}
+.wrap.editing{grid-template-columns:minmax(0,1fr) 320px}
+@media(max-width:820px){.wrap.editing{grid-template-columns:1fr}}
+.dropov{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;text-align:center;
+cursor:pointer;background:var(--card);border:2px dashed #c9cce0;border-radius:10px;transition:.15s;padding:16px}
+.dropov:hover,.dropov.hot{border-color:var(--acc2);background:#f7f8fc}
+.dropov b{color:var(--fg)}
 .stagebox{background:var(--card);border-radius:16px;padding:16px;box-shadow:var(--shadow)}
 .stage{position:relative;width:100%;max-width:460px;aspect-ratio:1;margin:0 auto;border-radius:10px;overflow:hidden;
 border:1px solid var(--line);touch-action:none;cursor:grab}
@@ -606,79 +611,88 @@ textarea#txt{width:100%;background:#fff;color:var(--fg);border:1px solid var(--l
 textarea#txt:focus{outline:none;border-color:var(--acc2)}
 select#font{background:#fff;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px}
 input[type=color]{width:34px;height:26px;padding:0;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer}
+#tiphelp{position:fixed;z-index:50;max-width:250px;background:#1f2330;color:#fff;font-size:12px;line-height:1.45;
+padding:8px 11px;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.3);pointer-events:none;opacity:0;transition:opacity .12s}
+#tiphelp.on{opacity:1}
 </style></head><body>
 <header><b>catsec · Signal Sticker Studio</b><span id=limnote></span>
   <span style="margin-left:auto;display:flex;gap:8px">
-    <button id=restartBtn class="ghost hide" title="Reset all settings for this file">↻ Restart</button>
-    <button id=newBtn class="ghost hide" title="Start over with a different file">＋ New conversion</button>
+    <button id=restartBtn class="ghost hide" data-help="Reset framing, trim, animation and text back to defaults for THIS file (keeps the file loaded).">↻ Restart</button>
+    <button id=newBtn class="ghost hide" data-help="Clear everything and start over with a different file.">＋ New conversion</button>
   </span></header>
 <main>
-  <div id=drop class=drop>
-    <p><b>Choose a photo or video</b> — or drop it here</p>
-    <p class=muted>gif · png · jpg · webp · mp4 · mov · webm</p>
-    <input id=file type=file accept="image/*,video/*" class=hide>
-    <p id=dropErr class=err></p>
-  </div>
-  <div id=editor class="wrap hide">
+  <div id=editor class=wrap>
     <div class=stagebox>
-      <div id=stage class="stage chkbg"><canvas id=cv width=512 height=512></canvas><div class=framehint></div></div>
-      <p class=muted style="text-align:center;margin:10px 0 0">drag to move · scroll or slider to zoom</p>
+      <div id=stage class="stage chkbg" data-help="This is the 512×512 sticker frame. Drag the image to reposition it; scroll to zoom.">
+        <canvas id=cv width=512 height=512></canvas>
+        <div class=framehint></div>
+        <div id=drop class=dropov data-help="Click to choose a photo or video, or drag a file straight onto this box.">
+          <div>
+            <p><b>Choose a photo or video</b></p>
+            <p class=muted>or drop it here</p>
+            <p class=muted style="margin-top:6px">gif · png · jpg · webp · mp4 · mov · webm</p>
+            <p id=dropErr class=err></p>
+          </div>
+        </div>
+      </div>
+      <input id=file type=file accept="image/*,video/*" class=hide>
+      <p id=stagehint class="muted hide" style="text-align:center;margin:10px 0 0">drag to move · scroll or slider to zoom</p>
     </div>
-    <div>
+    <div id=controls class=hide>
       <div class=panel>
         <h3>Step 1 · Framing</h3>
-        <div class=row><label>Zoom</label><input id=zoom type=range min=0 max=1000 value=500></div>
-        <div class=btns><button class=ghost id=fit>Fit</button><button class=ghost id=fill>Fill</button><button class=ghost id=reset>Reset</button></div>
+        <div class=row><label>Zoom</label><input id=zoom type=range min=0 max=1000 value=500 data-help="Zoom the image in or out within the frame. You can also scroll over the preview."></div>
+        <div class=btns><button class=ghost id=fit data-help="Fit the whole image inside the frame — nothing is cropped (may leave padded edges).">Fit</button><button class=ghost id=fill data-help="Scale the image to fill the whole frame — edges that overflow get cropped.">Fill</button><button class=ghost id=reset data-help="Reset zoom and position to the default framing.">Reset</button></div>
         <div class=row style="margin-top:14px"><label>Edges</label>
           <div class=seg style=flex:1>
-            <button id=padDom class=on><span id=sw class=swatch></span> Dominant</button>
-            <button id=padTrans>Transparent</button>
+            <button id=padDom class=on data-help="Fill any empty edges with the auto-detected dominant colour from the image."><span id=sw class=swatch></span> Dominant</button>
+            <button id=padTrans data-help="Make any empty edges transparent instead of filled with colour.">Transparent</button>
           </div>
         </div>
         <p class=muted id=padnote></p>
       </div>
       <div id=trimPanel class="panel hide">
         <h3>Step 2 · Trim <span class=muted>(clip &gt; 3s)</span></h3>
-        <div id=tl class=tl><div id=sel class=sel><div id=hL class=h style=left:0></div><div id=hR class=h style=right:0></div></div><div id=ph class=play></div></div>
+        <div id=tl class=tl data-help="Drag the two handles to pick which part of the clip to keep — Signal stickers can be at most 3 seconds." ><div id=sel class=sel><div id=hL class=h style=left:0></div><div id=hR class=h style=right:0></div></div><div id=ph class=play></div></div>
         <div class=tcs><span id=tStart>0.00s</span><span id=tDur>0.00s window</span><span id=tEnd>0.00s</span></div>
-        <div class=btns style=margin-top:8px><button id=playBtn class=ghost>▶ Preview loop</button></div>
+        <div class=btns style=margin-top:8px><button id=playBtn class=ghost data-help="Play just the selected part on a loop so you can preview it.">▶ Preview loop</button></div>
       </div>
       <div id=animPanel class="panel hide">
         <h3>Step 3 · Animation</h3>
-        <div class=row><label>Frame&nbsp;rate</label><input id=fps type=range min=3 max=15 value=15>
+        <div class=row><label>Frame&nbsp;rate</label><input id=fps type=range min=3 max=15 value=15 data-help="Frames per second. Higher looks smoother but makes a bigger file — if the sticker won't fit under 300KB, lower this first.">
           <span id=fpsv class=muted style="min-width:48px;text-align:right;font-variant-numeric:tabular-nums">15 fps</span></div>
         <p class=muted>Higher is smoother but larger. If a clip won’t fit, lower this.</p>
-        <div class=row style="margin-top:4px"><label style="min-width:auto;color:var(--fg)">
+        <div class=row style="margin-top:4px"><label style="min-width:auto;color:var(--fg)" data-help="Append the clip played in reverse so it loops back seamlessly. Needs the trimmed clip under 3s.">
           <input type=checkbox id=loop> Loop (boomerang)</label></div>
         <p class=muted id=loopnote>Plays forward then reverse for a seamless loop.</p>
       </div>
       <div id=textPanel class=panel>
         <h3>Text <span class=muted>(optional · sits 20px from the bottom)</span></h3>
-        <textarea id=txt rows=2 placeholder="Caption — Enter for a new line"></textarea>
-        <div class=row><label>Font</label><select id=font></select></div>
-        <div class=row><label>Size</label><input id=tsize type=range min=8 max=120 value=32><span id=tsizev class=muted style="min-width:28px;text-align:right">32</span></div>
-        <div class=row><label>Outline</label><input id=tout type=range min=0 max=20 value=2><span id=toutv class=muted style="min-width:28px;text-align:right">2</span></div>
-        <div class=row><label>Align</label><div class=seg style=flex:1>
+        <textarea id=txt rows=2 placeholder="Caption — Enter for a new line" data-help="Optional caption baked into the sticker near the bottom. Press Enter for a new line. Leave empty for no text."></textarea>
+        <div class=row><label>Font</label><select id=font data-help="Font for the caption (only server-installed fonts are offered)."></select></div>
+        <div class=row><label>Size</label><input id=tsize type=range min=8 max=120 value=32 data-help="Caption text size, in output pixels."><span id=tsizev class=muted style="min-width:28px;text-align:right">32</span></div>
+        <div class=row><label>Outline</label><input id=tout type=range min=0 max=20 value=2 data-help="Thickness of the outline drawn around the text for legibility (0 = no outline)."><span id=toutv class=muted style="min-width:28px;text-align:right">2</span></div>
+        <div class=row><label>Align</label><div class=seg style=flex:1 data-help="Horizontal alignment of the caption.">
           <button id=alL>Left</button><button id=alC class=on>Center</button><button id=alR>Right</button></div></div>
         <div class=row><label>Colour</label>
-          <input type=color id=tcol value="#ffffff"><span class=muted>text</span>
-          <input type=color id=tocol value="#000000"><span class=muted>outline</span></div>
+          <input type=color id=tcol value="#ffffff" data-help="Fill colour of the caption text."><span class=muted>text</span>
+          <input type=color id=tocol value="#000000" data-help="Colour of the text outline."><span class=muted>outline</span></div>
       </div>
       <div class=panel>
-        <button id=go class=acc>Convert to sticker</button>
+        <button id=go class=acc data-help="Render the Signal-ready sticker (APNG if animated, PNG if static) under the 300KB limit. If it can't fit at full quality you'll be offered quality options.">Convert to sticker</button>
         <div id=err class=err></div>
       </div>
       <div id=qualPanel class="panel hide">
         <h3>Choose quality</h3>
         <p id=qualMsg class=muted></p>
-        <div id=tiles class=tiles></div>
+        <div id=tiles class=tiles data-help="The sticker didn't fit at full quality. Each tile is a different trade-off (softer detail, fewer colours, or balanced) that does fit — click one to render it."></div>
       </div>
       <div id=resPanel class="panel hide">
         <h3>Result</h3>
         <div class=result>
           <img id=resImg class="chk chkbg" alt="">
           <div><div id=resStat></div>
-            <div class=btns style=margin-top:10px><button id=dlBtn class=ghost>⬇ Download</button><button id=again class=ghost>New file</button></div>
+            <div class=btns style=margin-top:10px><button id=dlBtn class=ghost data-help="Download the finished sticker file to add to Signal.">⬇ Download</button><button id=again class=ghost data-help="Clear this result and start over with a new file.">New file</button></div>
           </div>
         </div>
       </div>
@@ -700,9 +714,11 @@ const FONT_CSS={'Impact':'Impact, Haettenschweiler, sans-serif','Sans Bold':'bol
 
 function dropErr(m){$('#dropErr').textContent=m||''}
 function err(m){$('#err').textContent=m||'';if(m)dropErr(m)}
-function reset(){S=null;$('#editor').classList.add('hide');$('#drop').classList.remove('hide');
-  $('#resPanel').classList.add('hide');$('#newBtn').classList.add('hide');$('#restartBtn').classList.add('hide');
-  err('');dropErr('');if(media&&media.tagName==='VIDEO')media.pause();}
+function reset(){if(media&&media.tagName==='VIDEO')media.pause();S=null;media=null;
+  $('#drop').classList.remove('hide');$('#controls').classList.add('hide');$('#editor').classList.remove('editing');
+  $('#stagehint').classList.add('hide');$('#resPanel').classList.add('hide');
+  $('#newBtn').classList.add('hide');$('#restartBtn').classList.add('hide');
+  err('');dropErr('');ctx.clearRect(0,0,512,512);}
 $('#newBtn').onclick=reset;
 $('#restartBtn').onclick=()=>{if(S){$('#qualPanel').classList.add('hide');$('#resPanel').classList.add('hide');setupUI();}};
 
@@ -761,7 +777,8 @@ function zoomToSlider(){const lo=Math.log(fitScale()*0.5),hi=Math.log(fillScale(
 function sliderToZoom(v){const lo=Math.log(fitScale()*0.5),hi=Math.log(fillScale()*4);return Math.exp(lo+(v/1000)*(hi-lo))}
 
 function setupUI(){
-  $('#drop').classList.add('hide');$('#editor').classList.remove('hide');$('#resPanel').classList.add('hide');err('');
+  $('#drop').classList.add('hide');$('#controls').classList.remove('hide');$('#editor').classList.add('editing');
+  $('#stagehint').classList.remove('hide');$('#resPanel').classList.add('hide');err('');
   $('#newBtn').classList.remove('hide');$('#restartBtn').classList.remove('hide');
   const small=S.width<=512&&S.height<=512;centre(small?fitScale():fillScale());
   if(S.pad==='transparent'){$('#sw').style.background='transparent';$('#padnote').textContent='Edges look transparent.';}
@@ -923,6 +940,34 @@ function showResult(j){
   $('#dlBtn').onclick=()=>{const a=document.createElement('a');a.href=j.url+'&dl=1';a.download='sticker.png';a.click();};
 }
 $('#again').onclick=reset;
+
+// ---- hover help: after a 2s hover on any [data-help], show an explanatory frame ----
+(function(){
+  const tip=document.createElement('div');tip.id='tiphelp';document.body.appendChild(tip);
+  let timer=null,tipFor=null;
+  const clear=()=>{if(timer){clearTimeout(timer);timer=null;}};
+  function place(el){
+    const r=el.getBoundingClientRect(),t=tip.getBoundingClientRect();
+    let x=Math.max(8,Math.min(r.left+r.width/2-t.width/2,innerWidth-t.width-8));
+    let y=r.bottom+8; if(y+t.height>innerHeight-8) y=r.top-t.height-8; if(y<8) y=8;
+    tip.style.left=x+'px';tip.style.top=y+'px';
+  }
+  function schedule(el){
+    if(el===tipFor)return;
+    clear();tipFor=el;tip.classList.remove('on');
+    if(!el)return;
+    timer=setTimeout(()=>{timer=null;if(tipFor!==el)return;
+      tip.textContent=el.getAttribute('data-help')||'';
+      tip.style.left='-9999px';tip.style.top='0';tip.classList.add('on');place(el);},2000);
+  }
+  document.addEventListener('pointerover',e=>{
+    const el=e.target.closest&&e.target.closest('[data-help]');if(el)schedule(el);});
+  document.addEventListener('pointerout',e=>{
+    const el=e.target.closest&&e.target.closest('[data-help]');
+    if(el&&tipFor===el&&!(e.relatedTarget&&el.contains(e.relatedTarget)))schedule(null);});
+  ['pointerdown','wheel','keydown'].forEach(ev=>document.addEventListener(ev,()=>schedule(null),{passive:true}));
+  document.addEventListener('scroll',()=>schedule(null),true);
+})();
 </script></body></html>"""
 
 
